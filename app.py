@@ -1,99 +1,45 @@
-from flask import Flask, request, jsonify
+from flask import Flask,request,jsonify
 from flask_cors import CORS
-import random, string, hashlib, datetime
-
-app = Flask(__name__)
+from datetime import datetime,timedelta
+import random,json,os
+app=Flask(__name__)
 CORS(app)
-SECRET = "GHOST2026"
-codes_db = {}
-
-# YOUR PRICING - NOT CHANGED
-PRICING = {
-    "HTFT": {"1W": 5000, "2W": 8000, "1M": 15000, "min_odds": "4-10"},
-    "OVER": {"1W": 3000, "2W": 5000, "1M": 9500, "min_odds": "3-10"},
-    "CORRECT": {"1W": 10000, "2W": 18000, "1M": 30000, "min_odds": "10-50"},
-    "ALL": {"1M": 50000, "min_odds": "ALL"}
-}
-
-WHATSAPP = "+237 6 83 67 05 78"
-WHATSAPP_LINK = "https://wa.me/237683670578"
-
-def gen_code(plan, duration):
-    rand = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-    code = f"{plan}-{duration}-{rand}"
-    codes_db[code] = {"plan": plan, "duration": duration, "created": datetime.datetime.now().isoformat()}
-    return code
-
-# FREE DAILY GAMES - AUTO
-FREE_GAMES = [
-    {"match": "Man City vs Arsenal", "tip": "Over 1.5 Goals", "odds": "1.35"},
-    {"match": "Real Madrid vs Barcelona", "tip": "BTTS Yes", "odds": "1.65"},
-    {"match": "Bayern vs Dortmund", "tip": "Over 2.5 Goals", "odds": "1.80"}
-]
-
-OVER_GAMES = [
-    {"match": "Liverpool vs Chelsea", "tip": "Over 2.5", "odds": "1.90"},
-    {"match": "PSG vs Lyon", "tip": "Over 1.5 HT", "odds": "2.10"},
-    {"match": "Inter vs AC Milan", "tip": "Over 2.5 + BTTS", "odds": "2.50"},
-    {"match": "Ajax vs PSV", "tip": "Over 3.5", "odds": "3.20"}
-]
-
-HTFT_GAMES = [
-    {"match": "Juventus vs Roma", "tip": "HT: X / FT: 1", "odds": "4.50"},
-    {"match": "Atletico vs Sevilla", "tip": "HT: 1 / FT: 1", "odds": "5.00"},
-    {"match": "Arsenal vs Tottenham", "tip": "HT: 2 / FT: 1", "odds": "6.00"}
-]
-
-CORRECT_GAMES = [
-    {"match": "Man United vs Newcastle", "tip": "Correct: 2-1", "odds": "8.50"},
-    {"match": "Chelsea vs Brighton", "tip": "Correct: 3-1", "odds": "12.00"},
-    {"match": "Barcelona vs Valencia", "tip": "Correct: 2-0", "odds": "9.00"}
-]
-
-@app.route("/")
-def home():
-    return jsonify({"status": "Cyber Ghost API Live", "whatsapp": WHATSAPP})
-
-@app.route("/daily")
-def daily():
-    plan = request.args.get("plan", "FREE").upper()
-    date = datetime.datetime.now().strftime("%Y-%m-%d")
-
-    if plan == "FREE":
-        games = FREE_GAMES
-    elif plan == "OVER":
-        games = OVER_GAMES
-    elif plan == "HTFT":
-        games = HTFT_GAMES
-    elif plan == "CORRECT":
-        games = CORRECT_GAMES
-    else:
-        games = FREE_GAMES
-
-    return jsonify({"date": date, "plan": plan, "games": games})
-
-@app.route("/gen")
+VIP_FILE="vip_codes.json"
+ADMIN_SECRET="CYBER_ADMIN_2024"
+def load_db():
+ if os.path.exists(VIP_FILE):
+  try:
+   with open(VIP_FILE) as f: return json.load(f)
+  except: pass
+ return {"CYBER2024":{"market":"ALL","expires":"2030-12-31T23:59:59","type":"lifetime","days":9999}}
+def save_db(d):
+ try:
+  with open(VIP_FILE,'w') as f: json.dump(d,f)
+ except: pass
+vip_db=load_db()
+def get_preds():
+ return [{"home":"Man City","away":"Arsenal","prediction":"Over 2.5","odds":"1.85","market":"OVER"},{"home":"Barcelona","away":"Real Madrid","prediction":"BTTS Yes","odds":"1.75","market":"BTTS"},{"home":"Bayern","away":"Dortmund","prediction":"HT/FT 1/1","odds":"4.50","market":"HTFT"},{"home":"PSG","away":"Marseille","prediction":"Home Win","odds":"2.10","market":"WINS"},{"home":"Inter","away":"AC Milan","prediction":"Draw","odds":"3.40","market":"DRAWS"},{"home":"Liverpool","away":"Chelsea","prediction":"Correct Score 2-1","odds":"12.00","market":"CORRECT"}]
+@app.route('/')
+def home(): return jsonify(status="Cyber Ghost API Live",whatsapp="+237 6 83 67 05 78")
+@app.route('/api/predictions')
+def preds(): return jsonify(predictions=get_preds())
+@app.route('/api/verify-vip')
+def verify():
+ code=request.args.get('code','').upper()
+ d=vip_db.get(code)
+ if not d: return jsonify(valid=False)
+ exp=datetime.fromisoformat(d['expires'])
+ return jsonify(valid=datetime.now()<=exp,expired=datetime.now()>exp,market=d['market'],expires=d['expires'],type=d['type'])
+@app.route('/api/generate-vip',methods=['POST'])
 def gen():
-    secret = request.args.get("secret", "")
-    plan = request.args.get("plan", "OVER").upper()
-    duration = request.args.get("duration", "1W").upper()
-
-    if secret!= SECRET:
-        return jsonify({"error": "Wrong secret"}), 403
-
-    code = gen_code(plan, duration)
-    price = PRICING.get(plan, {}).get(duration, 0)
-    return jsonify({"code": code, "plan": plan, "duration": duration, "price": price, "whatsapp": WHATSAPP})
-
-@app.route("/validate")
-def validate():
-    code = request.args.get("code", "").upper().strip()
-    if code in codes_db:
-        return jsonify({"valid": True, "data": codes_db[code]})
-    # Also allow prefix check for app offline mode
-    if code.startswith(("OVER", "HTFT", "CORRECT", "ALL", "FREE", "GHOST")):
-        return jsonify({"valid": True, "data": {"plan": code.split("-")[0]}})
-    return jsonify({"valid": False})
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+ j=request.get_json()
+ if not j or j.get('secret')!=ADMIN_SECRET: return jsonify(error="Forbidden"),403
+ m=j.get('market','HTFT').upper()
+ dur=j.get('duration','1week')
+ days={"1week":7,"2weeks":14,"1month":30}.get(dur,7)
+ code=f"{m}-{dur[:4].upper()}-{random.randint(1000,9999)}"
+ exp=datetime.now()+timedelta(days=days)
+ vip_db[code]={"market":m,"expires":exp.isoformat(),"type":dur,"days":days}
+ save_db(vip_db)
+ return jsonify(code=code,market=m,duration=dur,days=days,expires=exp.isoformat())
+if __name__=='__main__': app.run(host='0.0.0.0',port=int(os.environ.get('PORT',10000)))
